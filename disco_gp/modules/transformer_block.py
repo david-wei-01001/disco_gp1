@@ -51,22 +51,22 @@ class DiscoGPTransformerBlock(nn.Module):
 
         # --- Normalization layers (pre/post variants supported) ---
         if self.cfg.normalization_type == "LN":
-            self.ln1 = LayerNorm(cfg)
+            self.ln1 = LayerNorm(cfg.model.to_tl_dict())
             if not self.cfg.attn_only:
-                self.ln2 = LayerNorm(cfg)
+                self.ln2 = LayerNorm(cfg.model.to_tl_dict())
         elif self.cfg.normalization_type == "LNPre":
             # We've folded in LayerNorm weights, so just need the center + scale parts
-            self.ln1 = LayerNormPre(cfg)
+            self.ln1 = LayerNormPre(cfg.model.to_tl_dict())
             if not self.cfg.attn_only:
-                self.ln2 = LayerNormPre(cfg)
+                self.ln2 = LayerNormPre(cfg.model.to_tl_dict())
         elif self.cfg.normalization_type == "RMS":
-            self.ln1 = RMSNorm(cfg)
+            self.ln1 = RMSNorm(cfg.model.to_tl_dict())
             if not self.cfg.attn_only:
-                self.ln2 = RMSNorm(cfg)
+                self.ln2 = RMSNorm(cfg.model.to_tl_dict())
         elif self.cfg.normalization_type == "RMSPre":
-            self.ln1 = RMSNormPre(cfg)
+            self.ln1 = RMSNormPre(cfg.model.to_tl_dict())
             if not self.cfg.attn_only:
-                self.ln2 = RMSNormPre(cfg)
+                self.ln2 = RMSNormPre(cfg.model.to_tl_dict())
         elif self.cfg.normalization_type is None:
             self.ln1 = nn.Identity()
             if not self.cfg.attn_only:
@@ -80,11 +80,11 @@ class DiscoGPTransformerBlock(nn.Module):
         # --- Feed-forward / MLP sublayer ---
         if not self.cfg.attn_only:
             if self.cfg.num_experts:
-                self.mlp = MoE(cfg)
+                self.mlp = MoE(cfg.model.to_tl_dict())
             elif self.cfg.gated_mlp:
-                self.mlp = GatedMLP(cfg)
+                self.mlp = GatedMLP(cfg.model.to_tl_dict())
             else:
-                self.mlp = MLP(cfg)
+                self.mlp = MLP(cfg.model.to_tl_dict())
 
         # Freeze all *weight* tensors by default; only mask logits should train
         for p in self.parameters():
