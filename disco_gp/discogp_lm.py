@@ -62,7 +62,7 @@ from .evaluation import (
     compute_complete_loss_multi_label,
     compute_faith_loss_multi_label,
 )
-from .utils import schedule_epoch_lambda
+from .utils import schedule_epoch_lambda, append_jsonl
 from .configs import Config
 
 def gumbel_sigmoid(logits, gs_temp: float = 1.0, eps: float = 1e-10):
@@ -92,9 +92,9 @@ class DiscoGPTransformer(nn.Module):
         self.cfg = cfg
 
         # Token + positional embeddings (if not rotary)
-        self.embed = Embed(self.cfg)
+        self.embed = Embed(cfg.model.to_tl_dict())
         if self.cfg.positional_embedding_type != "rotary":
-            self.pos_embed = PosEmbed(self.cfg)
+            self.pos_embed = PosEmbed(cfg.model.to_tl_dict())
 
         # Stack of custom blocks that apply/propagate masks internally
         self.blocks = nn.ModuleList(
@@ -110,27 +110,27 @@ class DiscoGPTransformer(nn.Module):
 
         # Final normalization choice
         if self.cfg.normalization_type == "RMS":
-            self.ln_final = RMSNorm(self.cfg)
+            self.ln_final = RMSNorm(cfg.model.to_tl_dict())
         elif self.cfg.normalization_type == "RMSPre":
-            self.ln_final = RMSNormPre(self.cfg)
+            self.ln_final = RMSNormPre(cfg.model.to_tl_dict())
         elif self.cfg.normalization_type == "LN":
             if self.cfg.final_rms:
-                self.ln_final = RMSNorm(self.cfg)
+                self.ln_final = RMSNorm(cfg.model.to_tl_dict())
             else:
-                self.ln_final = LayerNorm(self.cfg)
+                self.ln_final = LayerNorm(cfg.model.to_tl_dict())
         elif self.cfg.normalization_type == "LNPre":
             # We've folded in LayerNorm weights, so just need the center + scale parts
             if self.cfg.final_rms:
-                self.ln_final = RMSNormPre(self.cfg)
+                self.ln_final = RMSNormPre(cfg.model.to_tl_dict())
             else:
-                self.ln_final = LayerNormPre(self.cfg)
+                self.ln_final = LayerNormPre(cfg.model.to_tl_dict())
         elif self.cfg.normalization_type is None:
             # If it's None, don't create either layer
             pass
         else:
             logging.warning("Invalid normalization_type passed in %s", self.cfg.normalization_type)
 
-        self.unembed = Unembed(self.cfg)
+        self.unembed = Unembed(cfg.model.to_tl_dict())
 
         if self.cfg.init_weights:
             self.init_weights()
@@ -625,12 +625,12 @@ class DiscoGPTransformer(nn.Module):
         if 'e' in modes:
             return self.run_prune(mode='e')
 
-    def evaluate_and_report(self, epoch=None, mode=None, meta={}):
+    def evaluate_and_report(self, store_path=None, epoch=None, mode=None, meta={}):
         """Evaluate on train/eval/test splits and pretty-print a summary."""
         full_results = {}
         full_results.update(meta)
 
-        for split_name, dl in {'train': self.dls.train, 'eval': self.dls.eval, 'test': self.dls.test}.items():
+        for split_name, dl in {'train': self.dls.train, 'test': self.dls.test}.items():
             comp = self.evaluate(dl=dl, reverse=True)
             results = self.evaluate(dl=dl)
             results['comp'] = comp['acc']
@@ -639,6 +639,9 @@ class DiscoGPTransformer(nn.Module):
             full_results[split_name] = results
 
         self.log_result(full_results)
+        if store_path:
+            append_jsonl(store_path, full_results)
+            print(f"Store result of epoch {epoch} to {store_path}")
 
     def run_prune(self, mode):
         """Optimize mask logits for sparsity + (faithfulness [+ completeness]).
@@ -731,8 +734,11 @@ class DiscoGPTransformer(nn.Module):
                     self.turn_off_weight_masks()
 
             # Periodic evaluation
+            output_dir = Path(self.cfg.output_dir_path) / self.cfg.exp_name
+            output_dir.mkdir(parents=True, exist_ok=True)
             if i % self.cfg.evaluate_every == self.cfg.evaluate_every - 1:
                 self.evaluate_and_report(
+                    store_path=f"{output_dir}/result.jsonl",
                     epoch=epoch, mode=mode,
                     meta={
                         'lambda_sparse': lambda_sparse,
@@ -742,13 +748,11 @@ class DiscoGPTransformer(nn.Module):
             weight_mask = self.mask_logits_dict_weight
             edge_mask = self.mask_logits_dict_edge
 
-            if self.cfg.has('save_every', 'output_dir_path') and self.cfg.save_every and i % self.cfg.save_every == self.cfg.save_every - 1:
-                output_dir = Path(self.cfg.output_dir_path) / self.cfg.exp_name
-                output_dir.mkdir(parents=True, exist_ok=True)
-
-                if mode == 'w':
+            if mode == 'w':
+                if self.cfg.has('save_every', 'output_dir_path') and self.cfg.save_every and i % self.cfg.save_every == self.cfg.save_every - 1:
                     torch.save(weight_mask, output_dir / f'weight_mask_{mode}_epoch{epoch}.pt')
-                if mode == 'e':
+            if mode == 'e':
+                if self.cfg.has('edge_save_every', 'output_dir_path') and self.cfg.edge_save_every and i % self.cfg.edge_save_every == self.cfg.edge_save_every - 1:
                     torch.save(edge_mask, output_dir / f'edge_mask_{mode}_epoch{epoch}.pt')
 
         del mask_logits
