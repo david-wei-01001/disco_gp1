@@ -159,7 +159,7 @@ if __name__ == "__main__":
     exp_cfg = Config(
         evaluate_every=1,            # evaluate & print every N epochs
         # save_every=1,              # if specified, save weight masks every N epochs
-        # edge_save_every=1,         # if specified, save weight masks every N epochs
+        # edge_save_every=1,         # if specified, save edge masks every N epochs
         output_dir_path="./outputs",
         exp_name="quickstart",
     )
