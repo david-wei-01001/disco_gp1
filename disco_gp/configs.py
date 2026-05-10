@@ -5,6 +5,8 @@ from typing import Any, Dict, Union, Mapping
 import yaml
 
 import transformer_lens.loading_from_pretrained as loading
+from transformer_lens import HookedTransformerConfig
+from dataclasses import fields
 
 class Config:
     def __init__(self, **kwargs):
@@ -164,6 +166,14 @@ class Config:
         cfg.full_model_name = full_model_name
         return cfg
 
+    def to_tl_dict(self) -> Dict[str, Any]:
+        """
+        Return only keys valid for HookedTransformerConfig.
+        """
+        allowed = {f.name for f in fields(HookedTransformerConfig)}
+        d = self.to_dict()
+        return {k: v for k, v in d.items() if k in allowed}
+
     def add(self, **sections: "Config") -> "Config":
         """
         Attach one or more *named* sub-configs to this config.
@@ -193,3 +203,20 @@ class Config:
 
     def is_layer_norm_activation(self) -> bool:
         return self.act_fn is not None and self.act_fn.endswith("_ln")
+
+    @classmethod
+    def from_dict(cls, raw: Mapping[str, Any]) -> "Config":
+        """
+        Build a Config recursively from a nested dict.
+        """
+        def _to_cfg(node):
+            if isinstance(node, Mapping):
+                return cls(**{k: _to_cfg(v) for k, v in node.items()})
+            if isinstance(node, list):
+                return [_to_cfg(v) for v in node]
+            return node
+
+        if not isinstance(raw, Mapping):
+            raise TypeError("from_dict expects a mapping/dict at the top level")
+
+        return _to_cfg(raw)
