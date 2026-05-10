@@ -52,8 +52,8 @@ class Attention(nn.Module):
             self.attn_scale = cfg.attn_scale
 
         if cfg.use_qk_norm:
-            self.q_norm = RMSNorm(cfg, length=cfg.d_head)
-            self.k_norm = RMSNorm(cfg, length=cfg.d_head)
+            self.q_norm = RMSNorm(cfg.model.to_tl_dict(), length=cfg.d_head)
+            self.k_norm = RMSNorm(cfg.model.to_tl_dict(), length=cfg.d_head)
         else:
             self.q_norm = None
             self.k_norm = None
